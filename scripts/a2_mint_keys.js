@@ -3,7 +3,7 @@ import { AptosAccount } from "aptos";
 import dotenv from "dotenv";
 dotenv.config();
 
-// PLEASE FILL IN
+// PLEASE FILL IN. THIS SHOULD BE THE SAME AS NUMBER OF ADDRESS (OR A BIT MORE)
 const amount_of_keys_to_mint = 30;
 
 let payload;

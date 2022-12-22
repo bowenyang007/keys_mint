@@ -3,6 +3,7 @@ import { AptosAccount } from "aptos";
 import dotenv from "dotenv";
 dotenv.config();
 
+// NOTE: THIS WILL ONLY WORK IN MAINNET
 // PLEASE FILL IN
 const list_of_addresses = [
   "0x9c29bac6d9f5ec5c9e33a5c12522205b71637b10ed2bc5027917ad60ee5f7536",
@@ -10,6 +11,10 @@ const list_of_addresses = [
 ];
 // This will be 0 unless the script crashes in which case we need to replace with actual starting key number
 const starting_key_number = 0;
+// This should be the same as in a1_create_keys_collection.js
+const key_collection_name = "test_bla";
+// This should be the same as in a1_create_keys_collection.js
+const base_token_name = "Test";
 
 let payload;
 let txnRequest;
@@ -23,11 +28,10 @@ const account = new AptosAccount(private_key, `0x${process.env.ACCOUNT}`);
 
 let gas = 0;
 for (let addr in list_of_addresses) {
-  // THIS DOESN'T WORK YET
   payload = {
     type: "entry_function_payload",
     function: "0x2c7bccf7b31baf770fdbcc768d9e9cb3d87805e255355df5db32ac9a669010a2::inbox::offer_script",
-    arguments: [addr, ],
+    arguments: [addr, process.env.RES_ACCOUNT, key_collection_name, base_token_name, 0],
     type_arguments: []
   };
   txnRequest = await client.generateTransaction(account.address(), payload);
