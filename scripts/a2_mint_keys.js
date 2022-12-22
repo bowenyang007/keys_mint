@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // PLEASE FILL IN. THIS SHOULD BE THE SAME AS NUMBER OF ADDRESS (OR A BIT MORE)
-const amount_of_keys_to_mint = 30;
+const amount_of_keys_to_mint = 200;
 
 let payload;
 let txnRequest;
@@ -15,7 +15,7 @@ let result;
 const client = new AptosClient(process.env.NODE_URL);
 const private_key = HexString.ensure(process.env.PRIVATE_KEY).toUint8Array();
 const account = new AptosAccount(private_key, `0x${process.env.ACCOUNT}`);
-const MAX_MINT_CHUNK = 100;
+const MAX_MINT_CHUNK = 50;
 
 let left_to_mint = amount_of_keys_to_mint;
 while (left_to_mint > 0) {
@@ -26,7 +26,9 @@ while (left_to_mint > 0) {
     arguments: [amount],
     type_arguments: []
   };
-  txnRequest = await client.generateTransaction(account.address(), payload);
+  txnRequest = await client.generateTransaction(account.address(), payload, {
+    max_gas_amount: 2e6,
+  });
   signedTxn = await client.signTransaction(account, txnRequest);
   transactionRes = await client.submitTransaction(signedTxn);
   result = await client.waitForTransactionWithResult(transactionRes.hash);
