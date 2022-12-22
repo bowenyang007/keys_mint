@@ -7,6 +7,7 @@ I also recommend a text editor like sublime (https://www.sublimetext.com/3) beca
 ## How to use all this
 1. Download this package and unzip to Desktop or somewhere else easy to find
 2. Open terminal (google if you aren't sure)
+(The rest of instructions are all in terminal).
 3. Go into the folder containing the unzipped file
    1. `cd <path>` (google if you aren't sure how to do it, e.g. https://www.onmsft.com/how-to/change-directories-command-prompt-windows-10-11)
 4. Run `npm install`
