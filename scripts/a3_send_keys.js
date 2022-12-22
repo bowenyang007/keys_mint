@@ -31,7 +31,7 @@ for (let addr in list_of_addresses) {
   payload = {
     type: "entry_function_payload",
     function: "0x2c7bccf7b31baf770fdbcc768d9e9cb3d87805e255355df5db32ac9a669010a2::inbox::offer_script",
-    arguments: [addr, process.env.RES_ACCOUNT, key_collection_name, base_token_name, 0],
+    arguments: [addr, process.env.RES_ACCOUNT, key_collection_name, base_token_name, 0, 1],
     type_arguments: []
   };
   txnRequest = await client.generateTransaction(account.address(), payload);
