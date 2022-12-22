@@ -1,0 +1,26 @@
+[package]
+name = "keys"
+version = "0.0.1"
+upgrade_policy = "compatible"
+
+[dependencies.AptosFramework]
+git = 'https://github.com/aptos-labs/aptos-core.git'
+rev = 'd8955a2692e9004e3f6790db2a0595c2186faf36'
+subdir = 'aptos-move/framework/aptos-framework'
+
+[dependencies.AptosToken]
+git = 'https://github.com/aptos-labs/aptos-core.git'
+rev = 'd8955a2692e9004e3f6790db2a0595c2186faf36'
+subdir = 'aptos-move/framework/aptos-token'
+
+[dependencies.MoveStdlib]
+git = 'https://github.com/aptos-labs/aptos-core.git'
+rev = 'd8955a2692e9004e3f6790db2a0595c2186faf36'
+subdir = 'aptos-move/framework/move-stdlib'
+
+
+[addresses]
+source_addr = "_"
+
+[dev-addresses]
+source_addr = "0xa9ee1f7903fff959eb197e8d8c080cc1c3ac2c4d45fbf03880b79fb54847b222"
