@@ -37,7 +37,7 @@ while (left_to_mint > 0) {
     left_to_mint -= amount;
   } else {
     console.log("Minting failed! Got error: ", result.vm_status, `Transaction ${result.version}`);
-    console.log(`STOPPING MINT!!! ${left_to_mint} keys left to mint. Make sure to change amount to mint to left to mint amount.`);
+    console.log(`STOPPING SCRIPT!!! ${left_to_mint} keys left to mint. Make sure to change amount to mint to left to mint amount.`);
     break;
   }
 }

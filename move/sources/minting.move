@@ -341,7 +341,7 @@ module keys_custom::minting {
         mint_source_certificate_internal(admin, amount);
     }
 
-    entry fun mint_keys(
+    public entry fun mint_keys(
         nft_claimer: &signer,
         amount: u64
     ) acquires NFTMintConfig, SourceToken, WhitelistMintConfig {
@@ -358,7 +358,7 @@ module keys_custom::minting {
 
     // Exchange a source certificate token to a destination token. This function will burn the source certificate
     // and put a destination token in the nft_claimer's TokenStore.
-    entry fun exchange(nft_claimer: &signer, source_token_name: String) acquires NFTMintConfig, CollectionConfig, RevealConfig, SourceToken {
+    public entry fun exchange(nft_claimer: &signer, source_token_name: String) acquires NFTMintConfig, CollectionConfig, RevealConfig, SourceToken {
         assert!(exists<CollectionConfig>(@keys_custom) && exists<RevealConfig>(@keys_custom), error::permission_denied(ECONFIG_NOT_INITIALIZED));
 
         let reveal_config = borrow_global<RevealConfig>(@keys_custom);

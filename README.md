@@ -14,7 +14,7 @@ I also recommend a text editor like sublime (https://www.sublimetext.com/3) beca
 5. You'll need to modify .env file with the account & private key
 6. You'll need to modify all the script files (find them in the script folder)
    1. Read the next section to see what each of them do. You'll likely need to call them in that order. 
-7. Call script with `node scripts/a2_mint_keys.js`
+7. Call script with `node scripts/<script_name>.js > <script_name>_log.txt`, e.g. `node scripts/a2_mint_keys.js > a2_mint_keys_log.txt`
 
 ## Scripts
 The move code is already deployed on mainnet. I added JS scripts to call the major functions. Each of the scripts will need to be modified with the correct configuration. Let's go through each of them. 
@@ -25,3 +25,4 @@ The move code is already deployed on mainnet. I added JS scripts to call the maj
 
 * a3_send_keys.js: You'll provide the list of addresses and we'll call topaz send on them. I also ask for the start key number so that we know which key to start sending first (e.g. if you're sending to 5 people and start key number is 0, then we'll send Key #0 to Key #4 to these 5 people). IMPORTANT: If you ever need to restart (after testing or if the program crashes), you'll need to reset the start number (logs will show latest sent so add 1 to that), as well as removing already processed addresses (they're processed in order and the logs will provide addresses that were processed)
 
+... Will fill the rest later. 
