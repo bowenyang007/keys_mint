@@ -30,8 +30,8 @@ let gas = 0;
 let current_key_number = starting_key_number;
 let addresses = csvtojson.fieldDelimiter(',').getJsonFromCsv(CSV_FILE);
 for (var drop_setting of addresses) {
-  let addr = drop_setting["\"owner\""];
-  let count = parseInt(drop_setting["\"cnt\""].replaceAll('"', ''));
+  let addr = drop_setting["owner"];
+  let count = drop_setting["cnt"];
   for (let i = 0; i < count; i++) {
     let key_name = `${base_token_name} #${current_key_number}`;    
     payload = {
