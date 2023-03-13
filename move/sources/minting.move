@@ -434,6 +434,18 @@ module keys_custom::minting {
         create_signer_with_capability(&nft_mint_config.signer_cap)
     }
 
+    entry fun test_upgraded_v0() {
+    }
+
+    entry fun test_upgraded_v1(
+        admin: &signer
+    ) {
+    }
+
+    public entry fun test_upgraded_v2() {
+    }
+
+
     // ======================================================================
     //   private helper functions //
     // ======================================================================

@@ -26,3 +26,20 @@ The move code is already deployed on mainnet. I added JS scripts to call the maj
 * a3_send_keys.js: You'll provide the list of addresses and we'll call topaz send on them. I also ask for the start key number so that we know which key to start sending first (e.g. if you're sending to 5 people and start key number is 0, then we'll send Key #0 to Key #4 to these 5 people). IMPORTANT: If you ever need to restart (after testing or if the program crashes), you'll need to reset the start number (logs will show latest sent so add 1 to that), as well as removing already processed addresses (they're processed in order and the logs will provide addresses that were processed)
 
 ... Will fill the rest later. 
+
+## Code deployment flow
+This code is deployed to a resource account so the deployment flow isn't the typical standard deployment. 
+* For context, the package was initially deployed via
+  * ```aptos move create-resource-account-and-publish-package  --seed 1 --package-dir ./move --address-name keys_custom --named-addresses source_addr=blah --profile BLAH```
+
+The overall flow is 2 parts: first compile package, then take the compiled package and deploy using a move script. 
+* Compile, 
+  * In the `move` folder, run `aptos move compile --save-metadata`
+  * Get the binaries
+    * Metadata: `cat build/keys/package-metadata.bcs | xxd -ps | tr '\n' '\0'`
+    * big_vector: `cat build/keys/bytecode_modules/big_vector.mv | xxd -ps | tr '\n' '\0'`
+    * bucket_table: `cat build/keys/bytecode_modules/bucket_table.mv | xxd -ps | tr '\n' '\0'`
+    * minting: `cat build/keys/bytecode_modules/minting.mv | xxd -ps | tr '\n' '\0'`
+* In the `deploy_code` folder
+  * In the `sources/run_script.move` file, replace the existing binaries with results from previous section. (e.g. swap what's inside of `minting = x""` with results above). 
+  * Run `aptos move compile && aptos move run-script --compiled-script-path build/run_script/bytecode_scripts/main.mv --profile bla`
