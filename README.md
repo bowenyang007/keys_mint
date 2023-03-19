@@ -1,4 +1,10 @@
 # keys_mint
+
+## Updates
+03/18
+* Changed `scripts/a2_mint_keys.js` to `scripts/a2b_mint_keys`
+* Added `scripts/a2a_set_key_batch.js` where you can set the key batch before calling `a2b_mint_keys` (see more details in scripts section below and in file)
+
 ## Pre-requisite
 Make sure that nodejs is installed. Follow instructions here: https://docs.npmjs.com/downloading-and-installing-node-js-and-npm#using-a-node-installer-to-install-nodejs-and-npm
 
@@ -21,7 +27,9 @@ The move code is already deployed on mainnet. I added JS scripts to call the maj
 
 * a1_create_keys_collection.js: creates the key collection. You'll need to provide all the necessary fields. I also ask about the token such as the `base_token_name`. It will be used to generate Key #123 (where `Key` is the `base_token_name`)
 
-* a2_mint_keys.js: mints all the keys in the collection in batches of 100. You should definitely put a small number to test how much gas it will cost. Gas cost should be linear. You'll need to mint 1 for each address so the amount should be the same as number of addresses. 
+* a2a_set_key_batch.js: Specifies which batch to mint next. Takes in `batch_1`, `batch_2`, and `batch_3`. Once a batch is set subsequent mints will be that batch.
+
+* a2b_mint_keys.js: mints all the keys in the collection in batches of 100. You should definitely put a small number to test how much gas it will cost. Gas cost should be linear. You'll need to mint 1 for each address so the amount should be the same as number of addresses. 
 
 * a3_send_keys.js: You'll provide the list of addresses and we'll call topaz send on them. I also ask for the start key number so that we know which key to start sending first (e.g. if you're sending to 5 people and start key number is 0, then we'll send Key #0 to Key #4 to these 5 people). IMPORTANT: If you ever need to restart (after testing or if the program crashes), you'll need to reset the start number (logs will show latest sent so add 1 to that), as well as removing already processed addresses (they're processed in order and the logs will provide addresses that were processed)
 
