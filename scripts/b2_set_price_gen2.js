@@ -3,9 +3,9 @@ import { AptosAccount } from "aptos";
 import dotenv from "dotenv";
 dotenv.config();
 
-// PLEASE FILL IN. THIS SHOULD BE THE SAME AS NUMBER OF ADDRESS (OR A BIT MORE)
-// this can be batch_1, batch_2, or batch_3
-const key_batch = 'batch_2'
+// PLEASE FILL IN
+// Prices in APT e.g. [.2, 1, 2, 4.5]
+const price_config = [.2, 1, 2, 4.55];
 
 let payload;
 let txnRequest;
@@ -19,8 +19,8 @@ const account = new AptosAccount(private_key, `0x${process.env.ACCOUNT}`);
 
 payload = {
   type: "entry_function_payload",
-  function: `0x${process.env.RES_ACCOUNT}::minting::set_key_batch`,
-  arguments: [key_batch],
+  function: `0x${process.env.RES_ACCOUNT}::minting::set_price_config`,
+  arguments: [price_config.map((price) => price * 1e8)],
   type_arguments: []
 };
 txnRequest = await client.generateTransaction(account.address(), payload);
@@ -28,7 +28,7 @@ signedTxn = await client.signTransaction(account, txnRequest);
 transactionRes = await client.submitTransaction(signedTxn);
 result = await client.waitForTransactionWithResult(transactionRes.hash);
 if (result.success) {
-  console.log(`Set to ${key_batch} Transaction ${result.version}`);
+  console.log(`Set to ${price_config} Transaction ${result.version}`);
 } else {
   console.log("Failed! Got error: ", result.vm_status, `Transaction ${result.version}`);
 }

@@ -69,9 +69,7 @@ module keys_custom::minting {
         whitelisted_address: BucketTable<address, u64>,
     }
 
-    /// RevealConfig stores the reveal_time for the collection.
-    /// After the reveal time, users can exchange their source
-    /// certificate token to an NFT in the destination collection.
+    /// Unused
     struct RevealConfig has key {
         reveal_time: u64,
         price: u64,
@@ -95,12 +93,29 @@ module keys_custom::minting {
         token_id: TokenId,
     }
 
-    /// Emitted when a user exchanges a source certificate token
-    /// to a destination token.
+    /// Unused
     struct ExchangeEvent has drop, store {
         token_receiver_address: address,
         price: u64,
         token_id: TokenId,
+    }
+
+    /// There are 4 buckets total of destination tokens and 3 batches of keys, this config
+    /// will be used to determine the probability of minting a destination token from a batch.
+    /// e.g. batch_one: [25, 25, 25, 25]
+    struct DestinationProbabilityConfig has key {
+        batch_one: vector<u64>,
+        batch_two: vector<u64>,
+        batch_three: vector<u64>,
+        general: vector<u64>,
+    }
+
+    /// This will set the price for each batch, in octa
+    struct PriceConfig has key {
+        batch_one: u64,
+        batch_two: u64,
+        batch_three: u64,
+        general: u64,
     }
 
     /// Keys batch URIs
@@ -271,21 +286,24 @@ module keys_custom::minting {
         admin: &signer,
         reveal_time: u64,
         price: u64,
-    ) acquires NFTMintConfig, RevealConfig {
-        let nft_mint_config = borrow_global_mut<NFTMintConfig>(@keys_custom);
-        assert!(signer::address_of(admin) == nft_mint_config.admin, error::permission_denied(ENOT_AUTHORIZED));
+    // ) acquires NFTMintConfig, RevealConfig {
+    ) {
+        // This function is no longer callable
+        assert!(false, error::permission_denied(ENOT_AUTHORIZED));
+        // let nft_mint_config = borrow_global_mut<NFTMintConfig>(@keys_custom);
+        // assert!(signer::address_of(admin) == nft_mint_config.admin, error::permission_denied(ENOT_AUTHORIZED));
 
-        if (exists<RevealConfig>(@keys_custom)) {
-            let reveal_config = borrow_global_mut<RevealConfig>(@keys_custom);
-            reveal_config.reveal_time = reveal_time;
-            reveal_config.price = price;
-        } else {
-            let resource_account = create_signer_with_capability(&nft_mint_config.signer_cap);
-            move_to(&resource_account, RevealConfig {
-                reveal_time,
-                price,
-            });
-        };
+        // if (exists<RevealConfig>(@keys_custom)) {
+        //     let reveal_config = borrow_global_mut<RevealConfig>(@keys_custom);
+        //     reveal_config.reveal_time = reveal_time;
+        //     reveal_config.price = price;
+        // } else {
+        //     let resource_account = create_signer_with_capability(&nft_mint_config.signer_cap);
+        //     move_to(&resource_account, RevealConfig {
+        //         reveal_time,
+        //         price,
+        //     });
+        // };
     }
 
     /// Add user addresses to the whitelist for the keys collection
@@ -386,73 +404,90 @@ module keys_custom::minting {
         // mint_source_certificate_internal(nft_claimer, amount);
     }
 
-    // Exchange a source certificate token to a destination token. This function will burn the source certificate
-    // and put a destination token in the nft_claimer's TokenStore.
-    public entry fun exchange(nft_claimer: &signer, source_token_name: String) acquires NFTMintConfig, CollectionConfig, RevealConfig, SourceToken {
-        assert!(exists<CollectionConfig>(@keys_custom) && exists<RevealConfig>(@keys_custom), error::permission_denied(ECONFIG_NOT_INITIALIZED));
-
-        let reveal_config = borrow_global<RevealConfig>(@keys_custom);
-        assert!(timestamp::now_seconds() > reveal_config.reveal_time, error::permission_denied(ECANNOT_EXCHANGE_BEFORE_REVEAL_STARTS));
-
-        let source_token = borrow_global<SourceToken>(@keys_custom);
-
-        let collection_config = borrow_global_mut<CollectionConfig>(@keys_custom);
-        let source_collection_name = source_token.collection_name;
-        
-        let token_id = token::create_token_id_raw(@keys_custom, source_collection_name, source_token_name, 0);
-        assert!(token::balance_of(signer::address_of(nft_claimer), token_id) > 0, error::invalid_argument(ETOKEN_ID_NOT_FOUND));
-
-        let now = timestamp::now_microseconds();
+    /// Burn a key, it should only be called by the gen2 mint function. Should we make this a friend function?
+    public fun burn_keys_admin(
+        nft_claimer: &signer,
+        source_token_name: String
+    ) acquires NFTMintConfig, CollectionConfig, SourceToken {
         let nft_mint_config = borrow_global_mut<NFTMintConfig>(@keys_custom);
-
-        // Assert there's still some token uris in the vector.
-        assert!(big_vector::length(&collection_config.tokens) > 0, error::permission_denied(ENO_ENOUGH_TOKENS_LEFT));
-
-        // Randomize which token we're assigning to the user.
-        let index = now % big_vector::length(&collection_config.tokens);
-        let token = big_vector::swap_remove(&mut collection_config.tokens, index);
-
-        // The name of the destination token will be based on the name of the source token
-        let token_name = collection_config.token_name_base;
-        string::append_utf8(&mut token_name, b" #");
-        let num = num_from_source_token_name(source_token_name);
-        string::append(&mut token_name, num);
-
         let resource_signer = create_signer_with_capability(&nft_mint_config.signer_cap);
         // Burn the source certificate token.
+        let source_token = borrow_global<SourceToken>(@keys_custom);
+        let source_collection_name = source_token.collection_name;
         token::burn(nft_claimer, @keys_custom, source_collection_name, source_token_name, 0, 1);
+    }
 
-        let token_data_id = create_tokendata(
-            &resource_signer,
-            collection_config.collection_name,
-            token_name,
-            collection_config.token_description,
-            collection_config.token_maximum,
-            token.token_uri,
-            collection_config.royalty_payee_address,
-            collection_config.royalty_points_den,
-            collection_config.royalty_points_num,
-            create_token_mutability_config(&TOKEN_MUTABILITY_CONFIG),
-            vector[],
-            vector[],
-            vector[],
-        );
+    // Exchange a source certificate token to a destination token. This function will burn the source certificate
+    // and put a destination token in the nft_claimer's TokenStore.
+    // public entry fun exchange(nft_claimer: &signer, source_token_name: String) acquires NFTMintConfig, CollectionConfig, RevealConfig, SourceToken {
+    public entry fun exchange(nft_claimer: &signer, source_token_name: String) {
+        // This function is no longer callable
+        assert!(false, error::permission_denied(ENOT_AUTHORIZED));
 
-        let token_id = token::mint_token(&resource_signer, token_data_id, 1);
-        token::direct_transfer(&resource_signer, nft_claimer, token_id, 1);
+        // assert!(exists<CollectionConfig>(@keys_custom) && exists<RevealConfig>(@keys_custom), error::permission_denied(ECONFIG_NOT_INITIALIZED));
 
-        // pay for the NFT
-        let price = reveal_config.price;
-        coin::transfer<AptosCoin>(nft_claimer, nft_mint_config.treasury, price);
+        // let reveal_config = borrow_global<RevealConfig>(@keys_custom);
+        // assert!(timestamp::now_seconds() > reveal_config.reveal_time, error::permission_denied(ECANNOT_EXCHANGE_BEFORE_REVEAL_STARTS));
 
-        event::emit_event<ExchangeEvent>(
-            &mut nft_mint_config.token_exchange_events,
-            ExchangeEvent {
-                token_receiver_address: signer::address_of(nft_claimer),
-                price,
-                token_id,
-            }
-        );
+        // let source_token = borrow_global<SourceToken>(@keys_custom);
+
+        // let collection_config = borrow_global_mut<CollectionConfig>(@keys_custom);
+        // let source_collection_name = source_token.collection_name;
+        
+        // let token_id = token::create_token_id_raw(@keys_custom, source_collection_name, source_token_name, 0);
+        // assert!(token::balance_of(signer::address_of(nft_claimer), token_id) > 0, error::invalid_argument(ETOKEN_ID_NOT_FOUND));
+
+        // let now = timestamp::now_microseconds();
+        // let nft_mint_config = borrow_global_mut<NFTMintConfig>(@keys_custom);
+
+        // // Assert there's still some token uris in the vector.
+        // assert!(big_vector::length(&collection_config.tokens) > 0, error::permission_denied(ENO_ENOUGH_TOKENS_LEFT));
+
+        // // Randomize which token we're assigning to the user.
+        // let index = now % big_vector::length(&collection_config.tokens);
+        // let token = big_vector::swap_remove(&mut collection_config.tokens, index);
+
+        // // The name of the destination token will be based on the name of the source token
+        // let token_name = collection_config.token_name_base;
+        // string::append_utf8(&mut token_name, b" #");
+        // let num = num_from_source_token_name(source_token_name);
+        // string::append(&mut token_name, num);
+
+        // let resource_signer = create_signer_with_capability(&nft_mint_config.signer_cap);
+        // // Burn the source certificate token.
+        // token::burn(nft_claimer, @keys_custom, source_collection_name, source_token_name, 0, 1);
+
+        // let token_data_id = create_tokendata(
+        //     &resource_signer,
+        //     collection_config.collection_name,
+        //     token_name,
+        //     collection_config.token_description,
+        //     collection_config.token_maximum,
+        //     token.token_uri,
+        //     collection_config.royalty_payee_address,
+        //     collection_config.royalty_points_den,
+        //     collection_config.royalty_points_num,
+        //     create_token_mutability_config(&TOKEN_MUTABILITY_CONFIG),
+        //     vector[],
+        //     vector[],
+        //     vector[],
+        // );
+
+        // let token_id = token::mint_token(&resource_signer, token_data_id, 1);
+        // token::direct_transfer(&resource_signer, nft_claimer, token_id, 1);
+
+        // // pay for the NFT
+        // let price = reveal_config.price;
+        // coin::transfer<AptosCoin>(nft_claimer, nft_mint_config.treasury, price);
+
+        // event::emit_event<ExchangeEvent>(
+        //     &mut nft_mint_config.token_exchange_events,
+        //     ExchangeEvent {
+        //         token_receiver_address: signer::address_of(nft_claimer),
+        //         price,
+        //         token_id,
+        //     }
+        // );
     }
 
     /// Acquire resource signer if we later need it to do something.
