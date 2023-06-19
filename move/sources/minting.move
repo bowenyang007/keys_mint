@@ -404,19 +404,6 @@ module keys_custom::minting {
         // mint_source_certificate_internal(nft_claimer, amount);
     }
 
-    /// Burn a key, it should only be called by the gen2 mint function. Should we make this a friend function?
-    public fun burn_keys_admin(
-        nft_claimer: &signer,
-        source_token_name: String
-    ) acquires NFTMintConfig, CollectionConfig, SourceToken {
-        let nft_mint_config = borrow_global_mut<NFTMintConfig>(@keys_custom);
-        let resource_signer = create_signer_with_capability(&nft_mint_config.signer_cap);
-        // Burn the source certificate token.
-        let source_token = borrow_global<SourceToken>(@keys_custom);
-        let source_collection_name = source_token.collection_name;
-        token::burn(nft_claimer, @keys_custom, source_collection_name, source_token_name, 0, 1);
-    }
-
     // Exchange a source certificate token to a destination token. This function will burn the source certificate
     // and put a destination token in the nft_claimer's TokenStore.
     // public entry fun exchange(nft_claimer: &signer, source_token_name: String) acquires NFTMintConfig, CollectionConfig, RevealConfig, SourceToken {

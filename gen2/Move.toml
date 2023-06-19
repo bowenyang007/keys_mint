@@ -18,6 +18,10 @@ git = 'https://github.com/aptos-labs/aptos-core.git'
 rev = 'framework-mainnet'
 subdir = 'aptos-move/framework/move-stdlib'
 
+[dependencies.AptosToken]
+git = 'https://github.com/aptos-labs/aptos-core.git'
+rev = 'framework-mainnet'
+subdir = 'aptos-move/framework/aptos-token'
 
 [addresses]
 # source_addr = "dbc5621916a85792ec7155a96f316e1ddda56726d788b47378b9deb9d8055383"

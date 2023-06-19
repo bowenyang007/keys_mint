@@ -3,6 +3,7 @@ module gen2_mint::minting_test5 {
     use std::signer;
     use std::string::{Self, String, utf8};
     use std::vector;
+    use std::option;
 
     use gen2_mint::big_vector::{Self, BigVector};
     use aptos_framework::object::{Self, Object};
@@ -11,6 +12,8 @@ module gen2_mint::minting_test5 {
     use aptos_token_objects::property_map;
     use aptos_framework::event;
     use aptos_framework::timestamp;
+    use aptos_token::token::burn;
+    use aptos_token_objects::royalty;
 
     /// The account is not authorized to update the resources.
     const ENOT_AUTHORIZED: u64 = 1;
@@ -42,7 +45,10 @@ module gen2_mint::minting_test5 {
     const EPROBABILITY_CONFIG_INCORRECT_SUM: u64 = 17;
     /// Price config needs to be a length 4 array
     const EPRICE_CONFIG_WRONG_LENGTH: u64 = 19;
-
+    /// Collection or token does not exist at address
+    const ENOT_EXIST: u64 = 20;
+    /// Only creator is authorized
+    const ENOT_CREATOR: u64 = 20;
     // /// WhitelistMintConfig stores information about whitelist minting.
     // struct WhitelistMintConfig has key {
     //     whitelisted_address: BucketTable<address, u64>,
@@ -97,7 +103,11 @@ module gen2_mint::minting_test5 {
         general: u64,
     }
 
-    /// The gen2 token
+    #[resource_group_member(group = aptos_framework::object::ObjectGroup)]
+    struct Gen2Collection has key {
+        mutator_ref: collection::MutatorRef,
+    }
+
     #[resource_group_member(group = aptos_framework::object::ObjectGroup)]
     struct Gen2Token has key {
         /// Used to burn.
@@ -232,6 +242,53 @@ module gen2_mint::minting_test5 {
         }
     }
 
+    entry fun create_collection(
+        creator: &signer,
+        description: String,
+        name: String,
+        uri: String,
+        supply: u64,
+        payee_address: address,
+        denominator: u64,
+        numerator: u64
+    ) {
+        let royalty_config = royalty::create(numerator, denominator, payee_address);
+        // Creates the collection with unlimited supply and without establishing any royalty configuration.
+        let constructor_ref = collection::create_fixed_collection(
+            creator,
+            description,
+            supply,
+            name,
+            option::some(royalty_config),
+            uri,
+        );
+        let object_signer = object::generate_signer(&constructor_ref);
+        let mutator_ref = collection::generate_mutator_ref(&constructor_ref);
+        move_to(&object_signer, Gen2Collection { mutator_ref });
+    }
+
+    entry fun set_description(creator: &signer, collection: Object<Gen2Collection>, new_description: String) acquires Gen2Collection {
+        authorize_creator(creator, &collection);
+        let collection_address = object::object_address(&collection);
+        let collection_object = borrow_global<Gen2Collection>(collection_address);
+        let mutator_ref = &collection_object.mutator_ref;
+        collection::set_description(
+            mutator_ref,
+            new_description,
+        );
+    }
+
+    entry fun set_uri(creator: &signer, collection: Object<Gen2Collection>, new_uri: String) acquires Gen2Collection {
+        authorize_creator(creator, &collection);
+        let collection_address = object::object_address(&collection);
+        let collection_object = borrow_global<Gen2Collection>(collection_address);
+        let mutator_ref = &collection_object.mutator_ref;
+        collection::set_uri(
+            mutator_ref,
+            new_uri,
+        );
+    }
+
     // /// Add user addresses to the whitelist for the keys collection
     // public entry fun add_to_whitelist(
     //     admin: &signer,
@@ -286,84 +343,83 @@ module gen2_mint::minting_test5 {
     //   private helper functions //
     // ======================================================================
 
-    // fun mint_random(claimer: &signer, batch: String) acquires DestinationProbabilityConfig, PriceConfig {
-    //     let claimer_addr = signer::address_of(claimer);
-
-    //     let price = get_price_by_batch(batch);
-    //     let probabilities = get_probabilities_by_batch(batch);
-
-    //     // mint token to the receiver
-    //     let resource_signer = create_signer_with_capability(&nft_mint_config.signer_cap);
-
-    //     while (amount > 0) {
-    //         let token_name = source_token.base_token_name;
-    //         string::append_utf8(&mut token_name, b" #");
-    //         let num = u64_to_string(source_token.largest_token_number);
-    //         string::append(&mut token_name, num);
-    //         token::create_token_script(
-    //             &resource_signer,
-    //             source_token.collection_name,
-    //             token_name,
-    //             source_token.token_description,
-    //             1,
-    //             1,
-    //             source_token.token_uri,
-    //             source_token.royalty_payee_address,
-    //             source_token.royalty_points_den,
-    //             source_token.royalty_points_num,
-    //             TOKEN_MUTABILITY_CONFIG,
-    //             vector<String>[utf8(BURNABLE_BY_OWNER)],
-    //             vector<vector<u8>>[bcs::to_bytes<bool>(&true)],
-    //             vector<String>[utf8(b"bool")],
-    //         );
-    //         let token_id = token::create_token_id_raw(
-    //             signer::address_of(&resource_signer),
-    //             source_token.collection_name,
-    //             token_name,
-    //             0
-    //         );
-    //         token::direct_transfer(&resource_signer, nft_claimer, token_id, 1);
-
-    //         event::emit_event<MintingEvent>(
-    //             &mut nft_mint_config.token_minting_events,
-    //             MintingEvent {
-    //                 token_receiver_address: receiver_addr,
-    //                 token_id,
-    //             }
-    //         );
-
-    //         source_token.largest_token_number = source_token.largest_token_number + 1;
-    //         amount = amount - 1;
-    //     };
-    // }
-
-    fun u64_to_string(value: u64): String {
-        if (value == 0) {
-            return utf8(b"0")
-        };
-        let buffer = vector::empty<u8>();
-        while (value != 0) {
-            vector::push_back(&mut buffer, ((48 + value % 10) as u8));
-            value = value / 10;
-        };
-        vector::reverse(&mut buffer);
-        utf8(buffer)
+    /// Authorizes the creator of the token or collection. Asserts that the token exists and the creator of the token
+    /// is `creator`.
+    inline fun authorize_creator<T: key>(creator: &signer, object: &Object<T>) {
+        let object_address = object::object_address(object);
+        assert!(
+            exists<T>(object_address),
+            error::not_found(ENOT_EXIST),
+        );
+        assert!(
+            token::creator(*object) == signer::address_of(creator),
+            error::permission_denied(ENOT_CREATOR),
+        );
     }
 
-    fun num_from_source_token_name(name: String): String {
-        let ind = string::index_of(&name, &string::utf8(b"#"));
-        string::sub_string(&name, ind + 1, string::length(&name))
+    /// Mint the token given batch
+    /// Returns token asset upon successful mint to display in the UI
+    fun mint_random(claimer: &signer, batch: String): TokenAsset acquires DestinationProbabilityConfig, PriceConfig, TokenPool {
+        let claimer_addr = signer::address_of(claimer);
+
+        let price = get_price_by_batch(batch);
+        let probabilities = get_probabilities_by_batch(batch);
+        let token_asset = get_random_token_asset(&probabilities);
+
+        // Do the actual mint
+
+        token_asset
+
+        // while (amount > 0) {
+        //     let token_name = source_token.base_token_name;
+        //     string::append_utf8(&mut token_name, b" #");
+        //     let num = u64_to_string(source_token.largest_token_number);
+        //     string::append(&mut token_name, num);
+        //     token::create_token_script(
+        //         &resource_signer,
+        //         source_token.collection_name,
+        //         token_name,
+        //         source_token.token_description,
+        //         1,
+        //         1,
+        //         source_token.token_uri,
+        //         source_token.royalty_payee_address,
+        //         source_token.royalty_points_den,
+        //         source_token.royalty_points_num,
+        //         TOKEN_MUTABILITY_CONFIG,
+        //         vector<String>[utf8(BURNABLE_BY_OWNER)],
+        //         vector<vector<u8>>[bcs::to_bytes<bool>(&true)],
+        //         vector<String>[utf8(b"bool")],
+        //     );
+        //     let token_id = token::create_token_id_raw(
+        //         signer::address_of(&resource_signer),
+        //         source_token.collection_name,
+        //         token_name,
+        //         0
+        //     );
+        //     token::direct_transfer(&resource_signer, nft_claimer, token_id, 1);
+
+        //     event::emit_event<MintingEvent>(
+        //         &mut nft_mint_config.token_minting_events,
+        //         MintingEvent {
+        //             token_receiver_address: receiver_addr,
+        //             token_id,
+        //         }
+        //     );
+
+        //     source_token.largest_token_number = source_token.largest_token_number + 1;
+        //     amount = amount - 1;
+        // };
     }
 
-    /// helper function to calculate the sum of a vector
-    fun sum(v: &vector<u64>): u64 {
-        let sum = 0;
-        let i = 0;
-        while (i < vector::length(v)) {
-            sum = sum + *vector::borrow(v, i);
-            i = i + 1;
-        };
-        return sum
+    public fun burn_keys(
+        minter: &signer,
+        key_address: address,
+        key_collection: String,
+        key_name: String
+    ) {
+        // Burn the key
+        burn(minter, key_address, key_collection, key_name, 0, 1);
     }
 
     fun get_price_by_batch(batch: String): u64 acquires PriceConfig {
@@ -394,7 +450,7 @@ module gen2_mint::minting_test5 {
         }
     }
 
-    fun get_random_token(probabilities: &vector<u64>): TokenAsset acquires TokenPool {
+    fun get_random_token_asset(probabilities: &vector<u64>): TokenAsset acquires TokenPool {
         let tier = get_random_pool_tier(probabilities);
         let pools = borrow_global_mut<TokenPool>(@gen2_mint);
 
@@ -460,5 +516,34 @@ module gen2_mint::minting_test5 {
             i = i + 1;
         };
         i
+    }
+
+    fun u64_to_string(value: u64): String {
+        if (value == 0) {
+            return utf8(b"0")
+        };
+        let buffer = vector::empty<u8>();
+        while (value != 0) {
+            vector::push_back(&mut buffer, ((48 + value % 10) as u8));
+            value = value / 10;
+        };
+        vector::reverse(&mut buffer);
+        utf8(buffer)
+    }
+
+    fun num_from_source_token_name(name: String): String {
+        let ind = string::index_of(&name, &string::utf8(b"#"));
+        string::sub_string(&name, ind + 1, string::length(&name))
+    }
+
+    /// helper function to calculate the sum of a vector
+    fun sum(v: &vector<u64>): u64 {
+        let sum = 0;
+        let i = 0;
+        while (i < vector::length(v)) {
+            sum = sum + *vector::borrow(v, i);
+            i = i + 1;
+        };
+        return sum
     }
 }
