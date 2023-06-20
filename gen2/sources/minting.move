@@ -4,7 +4,11 @@ module gen2_mint::minting_test5 {
     use std::string::{Self, String, utf8};
     use std::vector;
     use std::option;
+    use std::bcs;
 
+    use aptos_framework::aptos_coin::AptosCoin;
+    use aptos_framework::coin;
+    use aptos_framework::account::{Self, SignerCapability, create_signer_with_capability};
     use gen2_mint::big_vector::{Self, BigVector};
     use aptos_framework::object::{Self, Object};
     use aptos_token_objects::collection;
@@ -12,7 +16,7 @@ module gen2_mint::minting_test5 {
     use aptos_token_objects::property_map;
     use aptos_framework::event;
     use aptos_framework::timestamp;
-    use aptos_token::token::burn;
+    use aptos_token::token::{burn, create_token_data_id, get_tokendata_uri};
     use aptos_token_objects::royalty;
 
     /// The account is not authorized to update the resources.
@@ -49,6 +53,14 @@ module gen2_mint::minting_test5 {
     const ENOT_EXIST: u64 = 20;
     /// Only creator is authorized
     const ENOT_CREATOR: u64 = 20;
+
+    /// Keys batch URIs
+    const BATCH_ONE: vector<u8> = b"https://arweave.net/1ZLZpknqquhGJQE8amEqjBSOHFySUjJi-hgiJ-ayueU";
+    const BATCH_TWO: vector<u8> = b"https://arweave.net/bEn-0ZO_gEUKkuR6puezQKT48vSyTdiLGDrOX0f2LOs";
+    const BATCH_THREE: vector<u8> = b"https://arweave.net/jXdxJ4ZIMcNNI5i87-zJs0MMik_cOT1-NhaViz8oBKA";
+
+    const KEYS_COLLECTION: vector<u8> = b"[REDACTED] Keys";
+
     // /// WhitelistMintConfig stores information about whitelist minting.
     // struct WhitelistMintConfig has key {
     //     whitelisted_address: BucketTable<address, u64>,
@@ -59,6 +71,12 @@ module gen2_mint::minting_test5 {
         tier2_pool: BigVector<TokenAsset>,
         tier3_pool: BigVector<TokenAsset>,
         tier4_pool: BigVector<TokenAsset>,
+    }
+
+    struct CreatorConfig has key {
+        resource_signer_cap: SignerCapability,
+        token_description: String,
+        mint_payee_address: address,
     }
 
     struct TokenAsset has drop, store {
@@ -119,7 +137,7 @@ module gen2_mint::minting_test5 {
         /// Used to mutate properties
         property_mutator_ref: property_map::MutatorRef,
         /// Used to emit MintEvent
-        _events: event::EventHandle<MintEvent>,
+        mint_events: event::EventHandle<MintEvent>,
     }
 
     #[resource_group_member(group = aptos_framework::object::ObjectGroup)]
@@ -144,7 +162,24 @@ module gen2_mint::minting_test5 {
     struct MintEvent has drop, store {
         token_receiver_address: address,
         token_data_id: address,
+        price: u64,
+        rarity: String,
+        token_uri: String,
+        token_name: String,
     }
+
+    fun init_module(admin: &signer) {
+        // Construct a seed vector that pseudo-randomizes the resource address generated.
+        let seed_vec = bcs::to_bytes(&timestamp::now_seconds());
+        let (_, resource_signer_cap) = account::create_resource_account(admin, seed_vec);
+
+        move_to(admin, CreatorConfig {
+            resource_signer_cap,
+            token_description: string::utf8(b""),
+            mint_payee_address: signer::address_of(admin),
+        });
+    }
+
 
     /// This will set the probability config which is a 4x4 matrix
     public entry fun set_probability_config(admin: &signer, probabilities: vector<vector<u64>>) acquires DestinationProbabilityConfig {
@@ -243,7 +278,7 @@ module gen2_mint::minting_test5 {
     }
 
     entry fun create_collection(
-        creator: &signer,
+        admin: &signer,
         description: String,
         name: String,
         uri: String,
@@ -251,11 +286,16 @@ module gen2_mint::minting_test5 {
         payee_address: address,
         denominator: u64,
         numerator: u64
-    ) {
+    ) acquires CreatorConfig {
+        assert!(signer::address_of(admin) == @gen2_mint, error::permission_denied(ENOT_AUTHORIZED));
+
         let royalty_config = royalty::create(numerator, denominator, payee_address);
+        let creator_config = borrow_global<CreatorConfig>(@gen2_mint);
+        let creator = create_signer_with_capability(&creator_config.resource_signer_cap);
+        
         // Creates the collection with unlimited supply and without establishing any royalty configuration.
         let constructor_ref = collection::create_fixed_collection(
-            creator,
+            &creator,
             description,
             supply,
             name,
@@ -267,8 +307,15 @@ module gen2_mint::minting_test5 {
         move_to(&object_signer, Gen2Collection { mutator_ref });
     }
 
-    entry fun set_description(creator: &signer, collection: Object<Gen2Collection>, new_description: String) acquires Gen2Collection {
-        authorize_creator(creator, &collection);
+    entry fun set_description(
+        admin: &signer,
+        collection: Object<Gen2Collection>,
+        new_description: String
+    ) acquires CreatorConfig, Gen2Collection {
+        assert!(signer::address_of(admin) == @gen2_mint, error::permission_denied(ENOT_AUTHORIZED));
+        let creator_config = borrow_global<CreatorConfig>(@gen2_mint);
+        let creator = create_signer_with_capability(&creator_config.resource_signer_cap);
+        authorize_creator(&creator, &collection);
         let collection_address = object::object_address(&collection);
         let collection_object = borrow_global<Gen2Collection>(collection_address);
         let mutator_ref = &collection_object.mutator_ref;
@@ -278,8 +325,15 @@ module gen2_mint::minting_test5 {
         );
     }
 
-    entry fun set_uri(creator: &signer, collection: Object<Gen2Collection>, new_uri: String) acquires Gen2Collection {
-        authorize_creator(creator, &collection);
+    entry fun set_uri(
+        admin: &signer,
+        collection: Object<Gen2Collection>,
+        new_uri: String
+    ) acquires CreatorConfig, Gen2Collection {
+        assert!(signer::address_of(admin) == @gen2_mint, error::permission_denied(ENOT_AUTHORIZED));
+        let creator_config = borrow_global<CreatorConfig>(@gen2_mint);
+        let creator = create_signer_with_capability(&creator_config.resource_signer_cap);
+        authorize_creator(&creator, &collection);
         let collection_address = object::object_address(&collection);
         let collection_object = borrow_global<Gen2Collection>(collection_address);
         let mutator_ref = &collection_object.mutator_ref;
@@ -287,6 +341,31 @@ module gen2_mint::minting_test5 {
             mutator_ref,
             new_uri,
         );
+    }
+
+    /// Burn a key to mint a gen2 token
+    entry fun burn_single_to_mint(
+        claimer: &signer,
+        collection_name: String,
+        key_to_burn: String,
+    ) acquires CreatorConfig, DestinationProbabilityConfig, Gen2Token, PriceConfig, TokenPool {
+        // Try to burn a key
+        let batch = burn_key(claimer, key_to_burn);
+        let creator_config = borrow_global<CreatorConfig>(@gen2_mint);
+        let price = get_price_by_batch(batch);
+        coin::transfer<AptosCoin>(claimer, creator_config.mint_payee_address, price);
+        let (token_asset, token_address) = mint_random(claimer, collection_name, batch);
+        event::emit_event(
+            &mut borrow_global_mut<Gen2Token>(token_address).mint_events,
+            MintEvent {
+                token_receiver_address: signer::address_of(claimer),
+                token_data_id: token_address,
+                price,
+                rarity: token_asset.rarity,
+                token_uri: token_asset.token_uri,
+                token_name: token_asset.token_name,
+            }
+        )
     }
 
     // /// Add user addresses to the whitelist for the keys collection
@@ -359,67 +438,107 @@ module gen2_mint::minting_test5 {
 
     /// Mint the token given batch
     /// Returns token asset upon successful mint to display in the UI
-    fun mint_random(claimer: &signer, batch: String): TokenAsset acquires DestinationProbabilityConfig, PriceConfig, TokenPool {
+    fun mint_random(
+        claimer: &signer,
+        collection_name: String,
+        batch: String
+    ): (TokenAsset, address) acquires CreatorConfig, DestinationProbabilityConfig, TokenPool {
         let claimer_addr = signer::address_of(claimer);
 
-        let price = get_price_by_batch(batch);
         let probabilities = get_probabilities_by_batch(batch);
         let token_asset = get_random_token_asset(&probabilities);
 
-        // Do the actual mint
+        // Mint the token
+        let creator_config = borrow_global<CreatorConfig>(@gen2_mint);
+        let creator = create_signer_with_capability(&creator_config.resource_signer_cap);
+        let description = creator_config.token_description;
 
-        token_asset
+        let constructor_ref = token::create_named_token(
+            &creator,
+            collection_name,
+            description,
+            token_asset.token_name,
+            option::none(),
+            token_asset.token_uri,
+        );
 
-        // while (amount > 0) {
-        //     let token_name = source_token.base_token_name;
-        //     string::append_utf8(&mut token_name, b" #");
-        //     let num = u64_to_string(source_token.largest_token_number);
-        //     string::append(&mut token_name, num);
-        //     token::create_token_script(
-        //         &resource_signer,
-        //         source_token.collection_name,
-        //         token_name,
-        //         source_token.token_description,
-        //         1,
-        //         1,
-        //         source_token.token_uri,
-        //         source_token.royalty_payee_address,
-        //         source_token.royalty_points_den,
-        //         source_token.royalty_points_num,
-        //         TOKEN_MUTABILITY_CONFIG,
-        //         vector<String>[utf8(BURNABLE_BY_OWNER)],
-        //         vector<vector<u8>>[bcs::to_bytes<bool>(&true)],
-        //         vector<String>[utf8(b"bool")],
-        //     );
-        //     let token_id = token::create_token_id_raw(
-        //         signer::address_of(&resource_signer),
-        //         source_token.collection_name,
-        //         token_name,
-        //         0
-        //     );
-        //     token::direct_transfer(&resource_signer, nft_claimer, token_id, 1);
+        // Generates the object signer and the refs. The object signer is used to publish a resource
+        let object_signer = object::generate_signer(&constructor_ref);
+        let transfer_ref = object::generate_transfer_ref(&constructor_ref);
+        let mutator_ref = token::generate_mutator_ref(&constructor_ref);
+        let burn_ref = token::generate_burn_ref(&constructor_ref);
+        let property_mutator_ref = property_map::generate_mutator_ref(&constructor_ref);
 
-        //     event::emit_event<MintingEvent>(
-        //         &mut nft_mint_config.token_minting_events,
-        //         MintingEvent {
-        //             token_receiver_address: receiver_addr,
-        //             token_id,
-        //         }
-        //     );
+        // Transfers the token to the `claimer` address
+        let linear_transfer_ref = object::generate_linear_transfer_ref(&transfer_ref);
+        object::transfer_with_ref(linear_transfer_ref, claimer_addr);
 
-        //     source_token.largest_token_number = source_token.largest_token_number + 1;
-        //     amount = amount - 1;
-        // };
+        // Add the traits to the object
+        let mask_traits = MaskTraits {
+            rarity: token_asset.rarity,
+            beak: token_asset.beak,
+            eyes: token_asset.eyes,
+            base: token_asset.base,
+            patterns: token_asset.patterns,
+        };
+        let person_traits = PersonTraits {
+            hair: token_asset.hair,
+            neck: token_asset.neck,
+            clothes: token_asset.clothes,
+            body: token_asset.body,
+            earring: token_asset.earring,
+            background: token_asset.background,
+        };
+
+        // Initialize the property map for display
+        let properties = property_map::prepare_input(vector[], vector[], vector[]);
+        property_map::init(&constructor_ref, properties);
+        add_mask_traits_to_property_map(&property_mutator_ref, &mask_traits);
+        add_person_traits_to_property_map(&property_mutator_ref, &person_traits);
+        
+        move_to(&object_signer, mask_traits);
+        move_to(&object_signer, person_traits);
+
+        // Move the object metadata to the object
+        let gen2_token = Gen2Token {
+            burn_ref,
+            transfer_ref,
+            mutator_ref,
+            property_mutator_ref,
+            mint_events: object::new_event_handle(&object_signer),
+        };
+        move_to(&object_signer, gen2_token);
+
+        (token_asset, signer::address_of(&object_signer))
     }
 
-    public fun burn_keys(
-        minter: &signer,
-        key_address: address,
-        key_collection: String,
+    /// Burn the key and return the batch
+    fun burn_key(
+        claimer: &signer,
         key_name: String
-    ) {
+    ): String {
+        let token_data_id = create_token_data_id(@keys_addr, string::utf8(KEYS_COLLECTION), key_name);
+        let batch = get_batch_from_uri(get_tokendata_uri(@keys_addr, token_data_id));
         // Burn the key
-        burn(minter, key_address, key_collection, key_name, 0, 1);
+        burn(claimer, @keys_addr, string::utf8(KEYS_COLLECTION), key_name, 0, 1);
+        batch
+    }
+
+    fun get_batch_from_uri(
+        uri: String
+    ): String {
+        let batch = utf8(b"");
+        if (uri == utf8(BATCH_ONE)) {
+            batch = utf8(b"batch_1");
+        } else if (uri == utf8(BATCH_TWO)) {
+            batch = utf8(b"batch_2");
+        } else if (uri == utf8(BATCH_THREE)) {
+            batch = utf8(b"batch_3");
+        } else {
+            assert!(false, error::invalid_argument(EBATCH_NOT_FOUND));
+        };
+        
+        batch
     }
 
     fun get_price_by_batch(batch: String): u64 acquires PriceConfig {
@@ -545,5 +664,72 @@ module gen2_mint::minting_test5 {
             i = i + 1;
         };
         return sum
+    }
+
+    fun add_mask_traits_to_property_map(
+        mutator_ref: &property_map::MutatorRef,
+        mask_traits: &MaskTraits
+    ) {
+        property_map::add_typed(
+            mutator_ref,
+            string::utf8(b"Rarity"),
+            mask_traits.rarity,
+        );
+        property_map::add_typed(
+            mutator_ref,
+            string::utf8(b"Beak"),
+            mask_traits.beak,
+        );
+        property_map::add_typed(
+            mutator_ref,
+            string::utf8(b"Eyes"),
+            mask_traits.eyes,
+        );
+        property_map::add_typed(
+            mutator_ref,
+            string::utf8(b"Base"),
+            mask_traits.base,
+        );
+        property_map::add_typed(
+            mutator_ref,
+            string::utf8(b"Patterns"),
+            mask_traits.patterns,
+        );
+    }
+
+    fun add_person_traits_to_property_map(
+        mutator_ref: &property_map::MutatorRef,
+        person_traits: &PersonTraits
+    ) {
+        property_map::add_typed(
+            mutator_ref,
+            string::utf8(b"Hair"),
+            person_traits.hair,
+        );
+        property_map::add_typed(
+            mutator_ref,
+            string::utf8(b"Neck"),
+            person_traits.neck,
+        );
+        property_map::add_typed(
+            mutator_ref,
+            string::utf8(b"Clothes"),
+            person_traits.clothes,
+        );
+        property_map::add_typed(
+            mutator_ref,
+            string::utf8(b"Body"),
+            person_traits.body,
+        );
+        property_map::add_typed(
+            mutator_ref,
+            string::utf8(b"Earring"),
+            person_traits.earring,
+        );
+        property_map::add_typed(
+            mutator_ref,
+            string::utf8(b"Background"),
+            person_traits.background,
+        );
     }
 }
