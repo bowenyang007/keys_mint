@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // PLEASE FILL IN
-const key_collection_name = "test_bla";
+const key_collection_name = "[REDACTED] Keys";
 const collection_description = "test_bla";
 const collection_maximum = 7878;
 const collection_uri = "test_bla";

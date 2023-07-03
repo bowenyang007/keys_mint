@@ -5,7 +5,7 @@ dotenv.config();
 
 // PLEASE FILL IN. THIS SHOULD BE THE SAME AS NUMBER OF ADDRESS (OR A BIT MORE)
 // this can be batch_1, batch_2, or batch_3
-const key_batch = 'batch_2'
+const key_batch = 'batch_1'
 
 let payload;
 let txnRequest;

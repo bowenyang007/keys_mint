@@ -8,13 +8,7 @@
 // mint_keys
 // add_to_whitelist
 
-// Part 2 - burn
-// set_destination_collection_config
-// add_tokens
-// create_destination_collection_from_config
-// set_reveal_config
-// exchange
-// (optional) set_treasury
+// Part 2 - burn to mint, but that code is in gen2 contract
 
 module keys_custom::minting {
     use std::error;

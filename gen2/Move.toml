@@ -1,5 +1,5 @@
 [package]
-name = "gen2_test"
+name = "gen2"
 version = "0.0.2"
 upgrade_policy = "compatible"
 
@@ -26,6 +26,6 @@ subdir = 'aptos-move/framework/aptos-token'
 [addresses]
 # source_addr = "dbc5621916a85792ec7155a96f316e1ddda56726d788b47378b9deb9d8055383"
 # keys_custom = "57410cf1141dd18aef4acf956d3c35a9634111642c5ed0ab0d017d634869959b"
-# keys_addr = "_"
-keys_addr = "dbc5621916a85792ec7155a96f316e1ddda56726d788b47378b9deb9d8055383"
+keys_addr = "_"
+# keys_addr = "dbc5621916a85792ec7155a96f316e1ddda56726d788b47378b9deb9d8055383"
 gen2_mint = "_"

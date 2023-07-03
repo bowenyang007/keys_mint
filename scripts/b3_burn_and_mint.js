@@ -4,7 +4,9 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // PLEASE FILL IN
-let amount = 1;
+// this needs to be the same as b1d_create_gen2_collection
+const collection_name = 'Gen 2';
+const key_to_burn = 'Test #0';
 
 let payload;
 let txnRequest;
@@ -18,18 +20,16 @@ const account = new AptosAccount(private_key, `0x${process.env.ACCOUNT}`);
 
 payload = {
   type: "entry_function_payload",
-  function: `0x${process.env.RES_ACCOUNT}::minting::mint_keys`,
-  arguments: [amount],
+  function: `0x${process.env.ACCOUNT}::minting::burn_single_to_mint`,
+  arguments: [collection_name, key_to_burn],
   type_arguments: []
 };
-txnRequest = await client.generateTransaction(account.address(), payload, {
-  max_gas_amount: 2e6,
-});
+txnRequest = await client.generateTransaction(account.address(), payload);
 signedTxn = await client.signTransaction(account, txnRequest);
 transactionRes = await client.submitTransaction(signedTxn);
 result = await client.waitForTransactionWithResult(transactionRes.hash);
 if (result.success) {
-  console.log(`Mint successful. Transaction ${result.version}`);
+  console.log(`Burned key ${key_to_burn} and got gen2. Transaction ${result.version}`);
 } else {
-  console.log("Mint failed! Got error: ", result.vm_status, `Transaction ${result.version}`);
+  console.log("Failed! Got error: ", result.vm_status, `Transaction ${result.version}`);
 }

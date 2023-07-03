@@ -20,10 +20,10 @@ subdir = 'aptos-move/framework/move-stdlib'
 
 
 [addresses]
-source_addr = "dbc5621916a85792ec7155a96f316e1ddda56726d788b47378b9deb9d8055383"
-keys_custom = "57410cf1141dd18aef4acf956d3c35a9634111642c5ed0ab0d017d634869959b"
-# source_addr = "_"
-# keys_custom = "_"
+# source_addr = "dbc5621916a85792ec7155a96f316e1ddda56726d788b47378b9deb9d8055383"
+# keys_custom = "57410cf1141dd18aef4acf956d3c35a9634111642c5ed0ab0d017d634869959b"
+source_addr = "_"
+keys_custom = "_"
 
 [dev-addresses]
 source_addr = "0xa9ee1f7903fff959eb197e8d8c080cc1c3ac2c4d45fbf03880b79fb54847b222"

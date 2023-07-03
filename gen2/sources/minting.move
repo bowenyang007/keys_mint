@@ -1,4 +1,4 @@
-module gen2_mint::minting_test5 {
+module gen2_mint::minting {
     use std::error;
     use std::signer;
     use std::string::{Self, String, utf8};
@@ -180,6 +180,19 @@ module gen2_mint::minting_test5 {
         });
     }
 
+    public entry fun set_creator_config(
+        admin: &signer,
+        token_description: String,
+        mint_payee_address: address
+    ) acquires CreatorConfig {
+        if (signer::address_of(admin) != @gen2_mint) {
+            assert!(false, error::permission_denied(ENOT_AUTHORIZED)); 
+        };
+
+        let config = borrow_global_mut<CreatorConfig>(@gen2_mint);
+        config.token_description = token_description;
+        config.mint_payee_address = mint_payee_address;
+    }
 
     /// This will set the probability config which is a 4x4 matrix
     public entry fun set_probability_config(admin: &signer, probabilities: vector<vector<u64>>) acquires DestinationProbabilityConfig {
@@ -307,7 +320,7 @@ module gen2_mint::minting_test5 {
         move_to(&object_signer, Gen2Collection { mutator_ref });
     }
 
-    entry fun set_description(
+    entry fun set_collection_description(
         admin: &signer,
         collection: Object<Gen2Collection>,
         new_description: String
@@ -325,7 +338,7 @@ module gen2_mint::minting_test5 {
         );
     }
 
-    entry fun set_uri(
+    entry fun set_collection_uri(
         admin: &signer,
         collection: Object<Gen2Collection>,
         new_uri: String

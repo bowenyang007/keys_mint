@@ -4,14 +4,13 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // PLEASE FILL IN
-// Prices in APT e.g. [.2, 1, 2, 4.5]
-const price_config = [.2, 1, 2, 4.55];
+const token_description = "gen2 test";
+const mint_payee_address = "0xaa90bb55ecaeb7dfa8a7edee87e2bb0186f53880916c266b418ba17fb5857454";
 
 let payload;
 let txnRequest;
 let signedTxn;
 let transactionRes;
-let result;
 
 const client = new AptosClient(process.env.NODE_URL);
 const private_key = HexString.ensure(process.env.PRIVATE_KEY).toUint8Array();
@@ -19,16 +18,17 @@ const account = new AptosAccount(private_key, `0x${process.env.ACCOUNT}`);
 
 payload = {
   type: "entry_function_payload",
-  function: `0x${process.env.RES_ACCOUNT}::minting::set_price_config`,
-  arguments: [price_config.map((price) => price * 1e8)],
+  function: `0x${process.env.ACCOUNT}::minting::set_creator_config`,
+  arguments: [token_description, mint_payee_address],
   type_arguments: []
 };
+
 txnRequest = await client.generateTransaction(account.address(), payload);
 signedTxn = await client.signTransaction(account, txnRequest);
 transactionRes = await client.submitTransaction(signedTxn);
-result = await client.waitForTransactionWithResult(transactionRes.hash);
+let result = await client.waitForTransactionWithResult(transactionRes.hash);
 if (result.success) {
-  console.log(`Set to ${price_config} Transaction ${result.version}`);
+  console.log(`Creator config updated successfully. Transaction ${result.version}`);
 } else {
-  console.log("Failed! Got error: ", result.vm_status, `Transaction ${result.version}`);
+  console.log("Creator config not updated, got error: ", result.vm_status);
 }

@@ -27,7 +27,7 @@ while (left_to_mint > 0) {
     type_arguments: []
   };
   txnRequest = await client.generateTransaction(account.address(), payload, {
-    max_gas_amount: 2e6,
+    max_gas_amount: 2e5,
   });
   signedTxn = await client.signTransaction(account, txnRequest);
   transactionRes = await client.submitTransaction(signedTxn);
