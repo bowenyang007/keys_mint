@@ -275,6 +275,32 @@ module keys_custom::minting {
         move_to(&resource_signer, source_token);
     }
 
+    /// This is not in the real collection
+    public entry fun create_keys_collection_only(
+        admin: &signer,
+        collection_name: String,
+        collection_description: String,
+        collection_maximum: u64,
+        collection_uri: String,
+        base_token_name: String,
+        token_description: String,
+        token_uri: String,
+        royalty_payee_address: address,
+        royalty_points_den: u64,
+        royalty_points_num: u64,
+    ) acquires NFTMintConfig {
+        let nft_mint_config = borrow_global_mut<NFTMintConfig>(@keys_custom);
+        assert!(signer::address_of(admin) == nft_mint_config.admin, error::permission_denied(ENOT_AUTHORIZED));
+
+        assert!(royalty_points_den > 0 && royalty_points_num < royalty_points_den, error::invalid_argument(EINVALID_ROYALTY_NUMERATOR_DENOMINATOR));
+
+        let nft_mint_config = borrow_global_mut<NFTMintConfig>(@keys_custom);
+        let resource_signer = create_signer_with_capability(&nft_mint_config.signer_cap);
+
+        // Create the source certificate collection and token.
+        create_collection(&resource_signer, collection_name, collection_description, collection_uri, collection_maximum, COLLECTION_MUTABILITY_CONFIG);
+    }
+
     /// Set the reveal config of this collection.
     public entry fun set_reveal_config(
         admin: &signer,

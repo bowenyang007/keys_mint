@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // PLEASE FILL IN. THIS SHOULD BE THE SAME AS NUMBER OF ADDRESS (OR A BIT MORE)
-const amount_of_keys_to_mint = 1;
+const amount_of_keys_to_mint = 5;
 
 let payload;
 let txnRequest;
@@ -33,8 +33,8 @@ while (left_to_mint > 0) {
   transactionRes = await client.submitTransaction(signedTxn);
   result = await client.waitForTransactionWithResult(transactionRes.hash);
   if (result.success) {
-    console.log(`Finished minting batch, ${left_to_mint} keys left to mint. Gas spent ${result.gas_used * result.gas_unit_price / 1e8} APT. Transaction ${result.version}`);
     left_to_mint -= amount;
+    console.log(`Finished minting batch, ${left_to_mint} keys left to mint. Gas spent ${result.gas_used * result.gas_unit_price / 1e8} APT. Transaction ${result.version}`);
   } else {
     console.log("Minting failed! Got error: ", result.vm_status, `Transaction ${result.version}`);
     console.log(`STOPPING SCRIPT!!! ${left_to_mint} keys left to mint. Make sure to change amount to mint to left to mint amount.`);

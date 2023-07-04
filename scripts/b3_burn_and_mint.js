@@ -6,7 +6,7 @@ dotenv.config();
 // PLEASE FILL IN
 // this needs to be the same as b1d_create_gen2_collection
 const collection_name = 'Gen 2';
-const key_to_burn = 'Test #0';
+const key_to_burn = 'Test #5';
 
 let payload;
 let txnRequest;

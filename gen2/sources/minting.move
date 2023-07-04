@@ -18,6 +18,7 @@ module gen2_mint::minting {
     use aptos_framework::timestamp;
     use aptos_token::token::{burn, create_token_data_id, get_tokendata_uri};
     use aptos_token_objects::royalty;
+    use aptos_std::table::{Self, Table};
 
     /// The account is not authorized to update the resources.
     const ENOT_AUTHORIZED: u64 = 1;
@@ -53,6 +54,10 @@ module gen2_mint::minting {
     const ENOT_EXIST: u64 = 20;
     /// Only creator is authorized
     const ENOT_CREATOR: u64 = 20;
+    /// Token asset needs to have 13 elements
+    const ETOKEN_ASSET_WRONG_LENGTH: u64 = 21;
+    /// Token asset already added before
+    const ETOKEN_ASSET_ALREADY_ADDED: u64 = 22;
 
     /// Keys batch URIs
     const BATCH_ONE: vector<u8> = b"https://arweave.net/1ZLZpknqquhGJQE8amEqjBSOHFySUjJi-hgiJ-ayueU";
@@ -61,16 +66,20 @@ module gen2_mint::minting {
 
     const KEYS_COLLECTION: vector<u8> = b"[REDACTED] Keys";
 
-    // /// WhitelistMintConfig stores information about whitelist minting.
-    // struct WhitelistMintConfig has key {
-    //     whitelisted_address: BucketTable<address, u64>,
-    // }
+    /// WhitelistMintConfig stores information about whitelist minting.
+    struct WhitelistMintConfig has key {
+        whitelisted_address: BucketTable<address, u64>,
+    }
 
     struct TokenPool has key {
         tier1_pool: BigVector<TokenAsset>,
         tier2_pool: BigVector<TokenAsset>,
         tier3_pool: BigVector<TokenAsset>,
         tier4_pool: BigVector<TokenAsset>,
+    }
+
+    struct AllTokenAssets has key {
+        all_token_assets: Table<String, String>
     }
 
     struct CreatorConfig has key {
@@ -381,55 +390,88 @@ module gen2_mint::minting {
         )
     }
 
-    // /// Add user addresses to the whitelist for the keys collection
-    // public entry fun add_to_whitelist(
-    //     admin: &signer,
-    //     wl_addresses: vector<address>,
-    //     mint_limit: u64
-    // ) acquires NFTMintConfig, WhitelistMintConfig {
-    //     let nft_mint_config = borrow_global_mut<NFTMintConfig>(@gen2_mint);
-    //     assert!(signer::address_of(admin) == nft_mint_config.admin, error::permission_denied(ENOT_AUTHORIZED));
-    //     if (!exists<WhitelistMintConfig>(@gen2_mint)) {
-    //         let resource_account = create_signer_with_capability(&nft_mint_config.signer_cap);
-    //         move_to(&resource_account, WhitelistMintConfig {
-    //             whitelisted_address: bucket_table::new<address, u64>(10),
-    //         });
-    //     };
-    //     let whitelist_mint_config = borrow_global_mut<WhitelistMintConfig>(@gen2_mint);
+    /// Add user addresses to the whitelist for the keys collection
+    public entry fun add_to_whitelist(
+        admin: &signer,
+        wl_addresses: vector<address>,
+        mint_limit: u64
+    ) acquires NFTMintConfig, WhitelistMintConfig {
+        assert!(signer::address_of(admin) == @gen2_mint, error::permission_denied(ENOT_AUTHORIZED));
+        if (!exists<WhitelistMintConfig>(@gen2_mint)) {
+            let resource_account = create_signer_with_capability(&nft_mint_config.signer_cap);
+            move_to(&resource_account, WhitelistMintConfig {
+                whitelisted_address: bucket_table::new<address, u64>(10),
+            });
+        };
+        let whitelist_mint_config = borrow_global_mut<WhitelistMintConfig>(@gen2_mint);
 
-    //     let i = 0;
-    //     while (i < vector::length(&wl_addresses)) {
-    //         let addr = *vector::borrow(&wl_addresses, i);
-    //         // assert that the specified address exists
-    //         assert!(account::exists_at(addr), error::invalid_argument(EACCOUNT_DOES_NOT_EXIST));
-    //         bucket_table::add(&mut whitelist_mint_config.whitelisted_address, addr, mint_limit);
-    //         i = i + 1;
-    //     };
-    // }
+        let i = 0;
+        while (i < vector::length(&wl_addresses)) {
+            let addr = *vector::borrow(&wl_addresses, i);
+            // assert that the specified address exists
+            assert!(account::exists_at(addr), error::invalid_argument(EACCOUNT_DOES_NOT_EXIST));
+            bucket_table::add(&mut whitelist_mint_config.whitelisted_address, addr, mint_limit);
+            i = i + 1;
+        };
+    }
 
-    // /// Add destination tokens, which are the actual art tokens. The users will be able to exchange their source certificate token
-    // /// for a randomized destination token after the reveal time starts.
-    // public entry fun add_tokens(
-    //     admin: &signer,
-    //     token_uris: vector<String>,
-    // ) acquires NFTMintConfig, CollectionConfig {
-    //     let nft_mint_config = borrow_global_mut<NFTMintConfig>(@gen2_mint);
-    //     assert!(signer::address_of(admin) == nft_mint_config.admin, error::permission_denied(ENOT_AUTHORIZED));
+    /// add tokens to a particular pool
+    public entry fun add_tokens(
+        admin: &signer,
+        batch: String,
+        token_assets: vector<vector<String>>,
+    ) acquires AllTokenAssets, TokenPool {
+        assert!(signer::address_of(admin) == @gen2_mint, error::permission_denied(ENOT_AUTHORIZED));
+        if (!exists<AllTokenAssets>(@gen2_mint)) {
+            move_to(admin, AllTokenAssets {
+                all_token_assets: table::new(),
+            });
+        };
+        if (!exists<TokenPool>(@gen2_mint)) {
+            move_to(admin, TokenPool {
+                tier1_pool: big_vector::empty<TokenAsset>(128),
+                tier2_pool: big_vector::empty<TokenAsset>(128),
+                tier3_pool: big_vector::empty<TokenAsset>(128),
+                tier4_pool: big_vector::empty<TokenAsset>(128),
+            });
+        };
+        let all_assets = &mut borrow_global_mut<AllTokenAssets>(@gen2_mint).all_token_assets;
+        let pool_config = borrow_global_mut<TokenPool>(@gen2_mint);
 
-    //     assert!(exists<CollectionConfig>(@gen2_mint), error::permission_denied(ECONFIG_NOT_INITIALIZED));
-        
-    //     let collection_config = borrow_global_mut<CollectionConfig>(@gen2_mint);
-
-    //     assert!(vector::length(&token_uris) + big_vector::length(&collection_config.tokens) <= collection_config.collection_maximum || collection_config.collection_maximum == 0, error::invalid_argument(EEXCEEDS_COLLECTION_MAXIMUM));
-
-    //     let i = 0;
-    //     while (i < vector::length(&token_uris)) {
-    //         big_vector::push_back(&mut collection_config.tokens, TokenAsset {
-    //             token_uri: *vector::borrow(&token_uris, i),
-    //         });
-    //         i = i + 1;
-    //     };
-    // }
+        let pool = if (batch == utf8(b"batch_1")) {
+            &mut pool_config.tier1_pool
+        } else if (batch == utf8(b"batch_2")) {
+            &mut pool_config.tier2_pool
+        } else if (batch == utf8(b"batch_3")) {
+            &mut pool_config.tier3_pool
+        } else {
+            &mut pool_config.tier4_pool
+        };
+        let i = 0;
+        while (i < vector::length(&token_assets)) {
+            let token_asset = *vector::borrow(&token_assets, i);
+            assert!(vector::length(&token_asset) == 13, error::invalid_argument(ETOKEN_ASSET_WRONG_LENGTH));
+            let name = *vector::borrow(&token_asset, 1);
+            assert!(!table::contains(all_assets, name), error::invalid_argument(ETOKEN_ASSET_ALREADY_ADDED));
+            table::add(all_assets, name, batch);
+            big_vector::push_back(pool, TokenAsset {
+                token_uri: *vector::borrow(&token_asset, 0),
+                token_name: name,
+                rarity: *vector::borrow(&token_asset, 2),
+                beak: *vector::borrow(&token_asset, 3),
+                eyes: *vector::borrow(&token_asset, 4),
+                base: *vector::borrow(&token_asset, 5),
+                patterns: *vector::borrow(&token_asset, 6),
+                hair: *vector::borrow(&token_asset, 7),
+                neck: *vector::borrow(&token_asset, 8),
+                clothes: *vector::borrow(&token_asset, 9),
+                body: *vector::borrow(&token_asset, 10),
+                earring: *vector::borrow(&token_asset, 11),
+                background: *vector::borrow(&token_asset, 12),
+            });
+            i = i + 1;
+        }
+    }
 
     // ======================================================================
     //   private helper functions //
