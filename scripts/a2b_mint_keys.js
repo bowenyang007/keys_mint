@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // PLEASE FILL IN. THIS SHOULD BE THE SAME AS NUMBER OF ADDRESS (OR A BIT MORE)
-const amount_of_keys_to_mint = 5;
+const amount_of_keys_to_mint = 10;
 
 let payload;
 let txnRequest;

@@ -1,6 +1,6 @@
 {
   "dependencies": {
-    "aptos": "^1.4.0",
+    "aptos": "1.9.1",
     "convert-csv-to-json": "^1.5.0",
     "dotenv": "^16.0.3"
   },

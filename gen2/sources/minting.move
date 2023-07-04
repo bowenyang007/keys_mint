@@ -5,11 +5,15 @@ module gen2_mint::minting {
     use std::vector;
     use std::option;
     use std::bcs;
+    use std::from_bcs;
+    use std::hash;
 
+    use aptos_framework::transaction_context;
     use aptos_framework::aptos_coin::AptosCoin;
     use aptos_framework::coin;
     use aptos_framework::account::{Self, SignerCapability, create_signer_with_capability};
     use gen2_mint::big_vector::{Self, BigVector};
+    use gen2_mint::bucket_table::{Self, BucketTable};
     use aptos_framework::object::{Self, Object};
     use aptos_token_objects::collection;
     use aptos_token_objects::token;
@@ -58,6 +62,8 @@ module gen2_mint::minting {
     const ETOKEN_ASSET_WRONG_LENGTH: u64 = 21;
     /// Token asset already added before
     const ETOKEN_ASSET_ALREADY_ADDED: u64 = 22;
+    /// Rarity needs to be one of Legendary, Epic, Rare, Common
+    const ERARITY_NOT_RECOGNIZED: u64 = 23;
 
     /// Keys batch URIs
     const BATCH_ONE: vector<u8> = b"https://arweave.net/1ZLZpknqquhGJQE8amEqjBSOHFySUjJi-hgiJ-ayueU";
@@ -66,9 +72,21 @@ module gen2_mint::minting {
 
     const KEYS_COLLECTION: vector<u8> = b"[REDACTED] Keys";
 
+    const LEGENDARY: vector<u8> = b"Legendary";
+    const EPIC: vector<u8> = b"Epic";
+    const RARE: vector<u8> = b"Rare";
+    const COMMON: vector<u8> = b"Common";
+
     /// WhitelistMintConfig stores information about whitelist minting.
     struct WhitelistMintConfig has key {
         whitelisted_address: BucketTable<address, u64>,
+    }
+
+    struct TokenPoolView {
+        tier1_pool: u64,
+        tier2_pool: u64,
+        tier3_pool: u64,
+        tier4_pool: u64,
     }
 
     struct TokenPool has key {
@@ -86,6 +104,13 @@ module gen2_mint::minting {
         resource_signer_cap: SignerCapability,
         token_description: String,
         mint_payee_address: address,
+        collection_description: String,
+        collection_name: String,
+        collection_uri: String,
+        collection_supply: u64,
+        royalty_address: address,
+        royalty_denominator: u64,
+        royalty_numerator: u64
     }
 
     struct TokenAsset has drop, store {
@@ -184,15 +209,29 @@ module gen2_mint::minting {
 
         move_to(admin, CreatorConfig {
             resource_signer_cap,
-            token_description: string::utf8(b""),
+            token_description: utf8(b""),
             mint_payee_address: signer::address_of(admin),
+            collection_description: utf8(b""),
+            collection_name: utf8(b""),
+            collection_uri: utf8(b""),
+            collection_supply: 0,
+            royalty_address: signer::address_of(admin),
+            royalty_denominator: 0,
+            royalty_numerator: 0
         });
     }
 
     public entry fun set_creator_config(
         admin: &signer,
         token_description: String,
-        mint_payee_address: address
+        mint_payee_address: address,
+        collection_description: String,
+        collection_name: String,
+        collection_uri: String,
+        collection_supply: u64,
+        royalty_address: address,
+        royalty_denominator: u64,
+        royalty_numerator: u64
     ) acquires CreatorConfig {
         if (signer::address_of(admin) != @gen2_mint) {
             assert!(false, error::permission_denied(ENOT_AUTHORIZED)); 
@@ -201,6 +240,13 @@ module gen2_mint::minting {
         let config = borrow_global_mut<CreatorConfig>(@gen2_mint);
         config.token_description = token_description;
         config.mint_payee_address = mint_payee_address;
+        config.collection_description = collection_description;
+        config.collection_name = collection_name;
+        config.collection_uri = collection_uri;
+        config.collection_supply = collection_supply;
+        config.royalty_address = royalty_address;
+        config.royalty_denominator = royalty_denominator;
+        config.royalty_numerator = royalty_numerator;
     }
 
     /// This will set the probability config which is a 4x4 matrix
@@ -300,29 +346,26 @@ module gen2_mint::minting {
     }
 
     entry fun create_collection(
-        admin: &signer,
-        description: String,
-        name: String,
-        uri: String,
-        supply: u64,
-        payee_address: address,
-        denominator: u64,
-        numerator: u64
+        admin: &signer
     ) acquires CreatorConfig {
         assert!(signer::address_of(admin) == @gen2_mint, error::permission_denied(ENOT_AUTHORIZED));
 
-        let royalty_config = royalty::create(numerator, denominator, payee_address);
         let creator_config = borrow_global<CreatorConfig>(@gen2_mint);
+        let royalty_config = royalty::create(
+            creator_config.royalty_numerator,
+            creator_config.royalty_denominator,
+            creator_config.royalty_address
+        );
         let creator = create_signer_with_capability(&creator_config.resource_signer_cap);
-        
+
         // Creates the collection with unlimited supply and without establishing any royalty configuration.
         let constructor_ref = collection::create_fixed_collection(
             &creator,
-            description,
-            supply,
-            name,
+            creator_config.collection_description,
+            creator_config.collection_supply,
+            creator_config.collection_name,
             option::some(royalty_config),
-            uri,
+            creator_config.collection_uri,
         );
         let object_signer = object::generate_signer(&constructor_ref);
         let mutator_ref = collection::generate_mutator_ref(&constructor_ref);
@@ -365,29 +408,59 @@ module gen2_mint::minting {
         );
     }
 
-    /// Burn a key to mint a gen2 token
-    entry fun burn_single_to_mint(
+    #[view]
+    public fun view_pool_length(): TokenPoolView acquires TokenPool {
+        let pool = borrow_global<TokenPool>(@gen2_mint);
+        TokenPoolView {
+            tier1_pool: big_vector::length(&pool.tier1_pool),
+            tier2_pool: big_vector::length(&pool.tier2_pool),
+            tier3_pool: big_vector::length(&pool.tier3_pool),
+            tier4_pool: big_vector::length(&pool.tier4_pool),
+        }
+    }
+
+    #[view]
+    public fun view_wl_status(addr: address): u64 acquires WhitelistMintConfig {
+        let whitelist_config = borrow_global_mut<WhitelistMintConfig>(@gen2_mint);
+        if(!bucket_table::contains(&whitelist_config.whitelisted_address, &addr)) {
+            0
+        } else {
+            *bucket_table::borrow(&mut whitelist_config.whitelisted_address, addr)
+        }
+    }
+
+    /// Burn 1 or more keys to mint a gen2 token
+    entry fun burn_keys_to_mint(
         claimer: &signer,
-        collection_name: String,
-        key_to_burn: String,
+        keys_to_burn: vector<String>,
     ) acquires CreatorConfig, DestinationProbabilityConfig, Gen2Token, PriceConfig, TokenPool {
-        // Try to burn a key
-        let batch = burn_key(claimer, key_to_burn);
-        let creator_config = borrow_global<CreatorConfig>(@gen2_mint);
-        let price = get_price_by_batch(batch);
-        coin::transfer<AptosCoin>(claimer, creator_config.mint_payee_address, price);
-        let (token_asset, token_address) = mint_random(claimer, collection_name, batch);
-        event::emit_event(
-            &mut borrow_global_mut<Gen2Token>(token_address).mint_events,
-            MintEvent {
-                token_receiver_address: signer::address_of(claimer),
-                token_data_id: token_address,
-                price,
-                rarity: token_asset.rarity,
-                token_uri: token_asset.token_uri,
-                token_name: token_asset.token_name,
-            }
-        )
+        let i = 0;
+        while (i < vector::length(&keys_to_burn)) {
+            let key_to_burn = *vector::borrow(&keys_to_burn, i);
+            burn_key_to_mint_internal(claimer, key_to_burn, i);
+            i = i + 1;
+        }
+    }
+
+    /// Do not burn keys to mint a gen2 token
+    entry fun wl_mint(
+        claimer: &signer,
+        minting_amount: u64,
+    ) acquires CreatorConfig, DestinationProbabilityConfig, Gen2Token, PriceConfig, TokenPool, WhitelistMintConfig {
+        let whitelist_mint_config = borrow_global_mut<WhitelistMintConfig>(@gen2_mint);
+        let claimer_address = signer::address_of(claimer);
+        assert!(
+            bucket_table::contains(&whitelist_mint_config.whitelisted_address, &claimer_address),
+            error::permission_denied(EACCOUNT_NOT_WHITELISTED)
+        );
+        let remaining_minting_amount = bucket_table::borrow_mut(&mut whitelist_mint_config.whitelisted_address, claimer_address);
+        assert!(*remaining_minting_amount >= minting_amount, error::invalid_argument(EAMOUNT_EXCEEDS_MINTS_ALLOWED));
+        *remaining_minting_amount = *remaining_minting_amount - minting_amount;
+        let i = 0;
+        while (i < minting_amount) {
+            mint_internal(claimer, utf8(b"general"), i);
+            i = i + 1;
+        }
     }
 
     /// Add user addresses to the whitelist for the keys collection
@@ -395,12 +468,11 @@ module gen2_mint::minting {
         admin: &signer,
         wl_addresses: vector<address>,
         mint_limit: u64
-    ) acquires NFTMintConfig, WhitelistMintConfig {
+    ) acquires WhitelistMintConfig {
         assert!(signer::address_of(admin) == @gen2_mint, error::permission_denied(ENOT_AUTHORIZED));
         if (!exists<WhitelistMintConfig>(@gen2_mint)) {
-            let resource_account = create_signer_with_capability(&nft_mint_config.signer_cap);
-            move_to(&resource_account, WhitelistMintConfig {
-                whitelisted_address: bucket_table::new<address, u64>(10),
+            move_to(admin, WhitelistMintConfig {
+                whitelisted_address: bucket_table::new<address, u64>(100),
             });
         };
         let whitelist_mint_config = borrow_global_mut<WhitelistMintConfig>(@gen2_mint);
@@ -418,7 +490,6 @@ module gen2_mint::minting {
     /// add tokens to a particular pool
     public entry fun add_tokens(
         admin: &signer,
-        batch: String,
         token_assets: vector<vector<String>>,
     ) acquires AllTokenAssets, TokenPool {
         assert!(signer::address_of(admin) == @gen2_mint, error::permission_denied(ENOT_AUTHORIZED));
@@ -438,26 +509,33 @@ module gen2_mint::minting {
         let all_assets = &mut borrow_global_mut<AllTokenAssets>(@gen2_mint).all_token_assets;
         let pool_config = borrow_global_mut<TokenPool>(@gen2_mint);
 
-        let pool = if (batch == utf8(b"batch_1")) {
-            &mut pool_config.tier1_pool
-        } else if (batch == utf8(b"batch_2")) {
-            &mut pool_config.tier2_pool
-        } else if (batch == utf8(b"batch_3")) {
-            &mut pool_config.tier3_pool
-        } else {
-            &mut pool_config.tier4_pool
-        };
         let i = 0;
         while (i < vector::length(&token_assets)) {
             let token_asset = *vector::borrow(&token_assets, i);
             assert!(vector::length(&token_asset) == 13, error::invalid_argument(ETOKEN_ASSET_WRONG_LENGTH));
             let name = *vector::borrow(&token_asset, 1);
             assert!(!table::contains(all_assets, name), error::invalid_argument(ETOKEN_ASSET_ALREADY_ADDED));
-            table::add(all_assets, name, batch);
+            let rarity = *vector::borrow(&token_asset, 2);
+            assert!(rarity == utf8(LEGENDARY)
+                || rarity == utf8(EPIC)
+                || rarity == utf8(RARE)
+                || rarity == utf8(COMMON)
+            , error::invalid_argument(ERARITY_NOT_RECOGNIZED));
+            let pool = if (rarity == utf8(LEGENDARY)) {
+                &mut pool_config.tier1_pool
+            } else if (rarity == utf8(EPIC)) {
+                &mut pool_config.tier2_pool
+            } else if (rarity == utf8(RARE)) {
+                &mut pool_config.tier3_pool
+            } else {
+                &mut pool_config.tier4_pool
+            };
+
+            table::add(all_assets, name, rarity);
             big_vector::push_back(pool, TokenAsset {
                 token_uri: *vector::borrow(&token_asset, 0),
                 token_name: name,
-                rarity: *vector::borrow(&token_asset, 2),
+                rarity: rarity,
                 beak: *vector::borrow(&token_asset, 3),
                 eyes: *vector::borrow(&token_asset, 4),
                 base: *vector::borrow(&token_asset, 5),
@@ -477,6 +555,38 @@ module gen2_mint::minting {
     //   private helper functions //
     // ======================================================================
 
+    fun burn_key_to_mint_internal(
+        claimer: &signer,
+        key_to_burn: String,
+        nonce: u64,
+    ) acquires CreatorConfig, DestinationProbabilityConfig, Gen2Token, PriceConfig, TokenPool {
+        // Try to burn a key
+        let batch = burn_key(claimer, key_to_burn);
+        mint_internal(claimer, batch, nonce);
+    }
+
+    fun mint_internal(
+        claimer: &signer,
+        batch: String,
+        nonce: u64,
+    ) acquires CreatorConfig, DestinationProbabilityConfig, Gen2Token, PriceConfig, TokenPool {
+        let creator_config = borrow_global<CreatorConfig>(@gen2_mint);
+        let price = get_price_by_batch(batch);
+        coin::transfer<AptosCoin>(claimer, creator_config.mint_payee_address, price);
+        let (token_asset, token_address) = mint_random(claimer, batch, nonce);
+        event::emit_event(
+            &mut borrow_global_mut<Gen2Token>(token_address).mint_events,
+            MintEvent {
+                token_receiver_address: signer::address_of(claimer),
+                token_data_id: token_address,
+                price,
+                rarity: token_asset.rarity,
+                token_uri: token_asset.token_uri,
+                token_name: token_asset.token_name,
+            }
+        )
+    }
+
     /// Authorizes the creator of the token or collection. Asserts that the token exists and the creator of the token
     /// is `creator`.
     inline fun authorize_creator<T: key>(creator: &signer, object: &Object<T>) {
@@ -495,13 +605,13 @@ module gen2_mint::minting {
     /// Returns token asset upon successful mint to display in the UI
     fun mint_random(
         claimer: &signer,
-        collection_name: String,
-        batch: String
+        batch: String,
+        nonce: u64,
     ): (TokenAsset, address) acquires CreatorConfig, DestinationProbabilityConfig, TokenPool {
         let claimer_addr = signer::address_of(claimer);
 
         let probabilities = get_probabilities_by_batch(batch);
-        let token_asset = get_random_token_asset(&probabilities);
+        let token_asset = get_random_token_asset(&probabilities, nonce);
 
         // Mint the token
         let creator_config = borrow_global<CreatorConfig>(@gen2_mint);
@@ -510,7 +620,7 @@ module gen2_mint::minting {
 
         let constructor_ref = token::create_named_token(
             &creator,
-            collection_name,
+            creator_config.collection_name,
             description,
             token_asset.token_name,
             option::none(),
@@ -572,10 +682,10 @@ module gen2_mint::minting {
         claimer: &signer,
         key_name: String
     ): String {
-        let token_data_id = create_token_data_id(@keys_addr, string::utf8(KEYS_COLLECTION), key_name);
+        let token_data_id = create_token_data_id(@keys_addr, utf8(KEYS_COLLECTION), key_name);
         let batch = get_batch_from_uri(get_tokendata_uri(@keys_addr, token_data_id));
         // Burn the key
-        burn(claimer, @keys_addr, string::utf8(KEYS_COLLECTION), key_name, 0, 1);
+        burn(claimer, @keys_addr, utf8(KEYS_COLLECTION), key_name, 0, 1);
         batch
     }
 
@@ -624,31 +734,28 @@ module gen2_mint::minting {
         }
     }
 
-    fun get_random_token_asset(probabilities: &vector<u64>): TokenAsset acquires TokenPool {
-        let tier = get_random_pool_tier(probabilities);
+    fun get_random_token_asset(probabilities: &vector<u64>, nonce: u64): TokenAsset acquires TokenPool {
+        let tier = get_random_pool_tier(probabilities, nonce);
         let pools = borrow_global_mut<TokenPool>(@gen2_mint);
 
-        // This is basically the random number
-        let now = timestamp::now_microseconds();
-
         if (tier == 0) {
-            let index = now % big_vector::length(&pools.tier1_pool);
+            let index = random_with_nonce(big_vector::length(&pools.tier1_pool), nonce);
             big_vector::swap_remove(&mut pools.tier1_pool, index)
         } else if (tier == 1) {
-            let index = now % big_vector::length(&pools.tier2_pool);
+            let index = random_with_nonce(big_vector::length(&pools.tier2_pool), nonce);
             big_vector::swap_remove(&mut pools.tier2_pool, index)
         } else if (tier == 2) {
-            let index = now % big_vector::length(&pools.tier3_pool);
+            let index = random_with_nonce(big_vector::length(&pools.tier3_pool), nonce);
             big_vector::swap_remove(&mut pools.tier3_pool, index)
         } else {
-            let index = now % big_vector::length(&pools.tier4_pool);
+            let index = random_with_nonce(big_vector::length(&pools.tier4_pool), nonce);
             big_vector::swap_remove(&mut pools.tier4_pool, index)
         }
     }
 
     /// This function will get us a non empty pool based on the probabilities config
     /// If a pool is empty, it will ignore the pool while still maintaining the correct probability ratios
-    fun get_random_pool_tier(probabilities: &vector<u64>): u64 acquires TokenPool {
+    fun get_random_pool_tier(probabilities: &vector<u64>, nonce: u64): u64 acquires TokenPool {
         let pools = borrow_global_mut<TokenPool>(@gen2_mint);
         let multiplier = vector::empty();
         vector::push_back(&mut multiplier, if (big_vector::length(&pools.tier1_pool) > 0) {
@@ -671,14 +778,13 @@ module gen2_mint::minting {
         } else {
             0
         });
-        let now = timestamp::now_microseconds();
         let total = 0;
         let i = 0;
         while (i < vector::length(probabilities)) {
             total = total + *vector::borrow(probabilities, i) * *vector::borrow(&multiplier, i);
             i = i + 1;
         };
-        let random_bucket_perc = now % total;
+        let random_bucket_perc = random_with_nonce(total, nonce);
         let running_sum = 0;
         let i = 0;
         while (i < vector::length(probabilities)) {
@@ -690,6 +796,28 @@ module gen2_mint::minting {
             i = i + 1;
         };
         i
+    }
+
+    public fun random_with_nonce(max: u64, nonce: u64): u64
+    {                        
+        let number = timestamp::now_microseconds();
+        let script_hash: vector<u8> = transaction_context::get_script_hash();
+        let x = bcs::to_bytes<u64>(&number);
+        let y = bcs::to_bytes<u64>(&nonce);
+        vector::append(&mut x, script_hash);           
+        vector::append(&mut x, y);
+        let tmp = hash::sha2_256(x);
+
+        let data = vector<u8>[];
+        let i = 24;
+        while (i < 32)
+        {
+            let x =vector::borrow(&tmp, i);
+            vector::append(&mut data,vector<u8>[*x]);
+            i= i + 1;
+        };
+        let random = from_bcs::to_u64(data) % max;
+        random
     }
 
     fun u64_to_string(value: u64): String {
@@ -706,7 +834,7 @@ module gen2_mint::minting {
     }
 
     fun num_from_source_token_name(name: String): String {
-        let ind = string::index_of(&name, &string::utf8(b"#"));
+        let ind = string::index_of(&name, &utf8(b"#"));
         string::sub_string(&name, ind + 1, string::length(&name))
     }
 
@@ -727,27 +855,27 @@ module gen2_mint::minting {
     ) {
         property_map::add_typed(
             mutator_ref,
-            string::utf8(b"Rarity"),
+            utf8(b"Rarity"),
             mask_traits.rarity,
         );
         property_map::add_typed(
             mutator_ref,
-            string::utf8(b"Beak"),
+            utf8(b"Beak"),
             mask_traits.beak,
         );
         property_map::add_typed(
             mutator_ref,
-            string::utf8(b"Eyes"),
+            utf8(b"Eyes"),
             mask_traits.eyes,
         );
         property_map::add_typed(
             mutator_ref,
-            string::utf8(b"Base"),
+            utf8(b"Base"),
             mask_traits.base,
         );
         property_map::add_typed(
             mutator_ref,
-            string::utf8(b"Patterns"),
+            utf8(b"Patterns"),
             mask_traits.patterns,
         );
     }
@@ -758,32 +886,32 @@ module gen2_mint::minting {
     ) {
         property_map::add_typed(
             mutator_ref,
-            string::utf8(b"Hair"),
+            utf8(b"Hair"),
             person_traits.hair,
         );
         property_map::add_typed(
             mutator_ref,
-            string::utf8(b"Neck"),
+            utf8(b"Neck"),
             person_traits.neck,
         );
         property_map::add_typed(
             mutator_ref,
-            string::utf8(b"Clothes"),
+            utf8(b"Clothes"),
             person_traits.clothes,
         );
         property_map::add_typed(
             mutator_ref,
-            string::utf8(b"Body"),
+            utf8(b"Body"),
             person_traits.body,
         );
         property_map::add_typed(
             mutator_ref,
-            string::utf8(b"Earring"),
+            utf8(b"Earring"),
             person_traits.earring,
         );
         property_map::add_typed(
             mutator_ref,
-            string::utf8(b"Background"),
+            utf8(b"Background"),
             person_traits.background,
         );
     }
