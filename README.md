@@ -1,9 +1,7 @@
 # keys_mint
 
-## Updates
-03/18
-* Changed `scripts/a2_mint_keys.js` to `scripts/a2b_mint_keys`
-* Added `scripts/a2a_set_key_batch.js` where you can set the key batch before calling `a2b_mint_keys` (see more details in scripts section below and in file)
+## A visual of the overall flow
+![Alt text](image.png)
 
 ## Pre-requisite
 Make sure that nodejs is installed. Follow instructions here: https://docs.npmjs.com/downloading-and-installing-node-js-and-npm#using-a-node-installer-to-install-nodejs-and-npm
